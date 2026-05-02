@@ -1,0 +1,1200 @@
+import { useState, useEffect, useRef, useCallback } from “react”;
+
+/* ══════════════════════════════════════════════════════════
+CONSTANTS & DATA
+══════════════════════════════════════════════════════════ */
+const BOARD_SIZE = 28;
+const MAX_ROUNDS = 24;
+const START_MONEY = 1500;
+
+const TILE_DATA = [
+{ name:“GO”,        color:”#22c55e”, price:0,   rent:0,   type:“start”,   icon:“🏁” },
+{ name:“Fraction Ave”, color:”#86efac”, price:60,  rent:20,  type:“prop”,    icon:“➗” },
+{ name:“Algebra Blvd”, color:”#86efac”, price:80,  rent:25,  type:“prop”,    icon:“🔢” },
+{ name:“Variable St”,  color:”#fcd34d”, price:100, rent:30,  type:“prop”,    icon:“📐” },
+{ name:“QUESTION?”, color:”#a78bfa”, price:0,   rent:0,   type:“question”,icon:“❓” },
+{ name:“Equation Ln”,  color:”#fcd34d”, price:100, rent:30,  type:“prop”,    icon:“⚖️” },
+{ name:“Numerator Pl”, color:”#fcd34d”, price:120, rent:35,  type:“prop”,    icon:“⬆️” },
+{ name:“Denominator Dr”,color:”#fb923c”,price:140, rent:40,  type:“prop”,    icon:“⬇️” },
+{ name:“Exponent Way”, color:”#fb923c”, price:140, rent:40,  type:“prop”,    icon:“💥” },
+{ name:“MATH JAIL”,color:”#ef4444”, price:0,   rent:0,   type:“jail”,    icon:“⚖️” },
+{ name:“Coefficient Ct”,color:”#fb923c”,price:160, rent:45,  type:“prop”,    icon:“✖️” },
+{ name:“QUESTION?”, color:”#a78bfa”, price:0,   rent:0,   type:“question”,icon:“❓” },
+{ name:“Integer Isle”, color:”#38bdf8”, price:180, rent:50,  type:“prop”,    icon:“🔷” },
+{ name:“Decimal Dr”,   color:”#38bdf8”, price:180, rent:50,  type:“prop”,    icon:“🔸” },
+{ name:“Percent Park”, color:”#38bdf8”, price:200, rent:60,  type:“prop”,    icon:“💯” },
+{ name:“TAX STOP”,  color:”#f97316”, price:0,   rent:75,  type:“tax”,     icon:“💸” },
+{ name:“Radical Rd”,   color:”#e879f9”, price:220, rent:65,  type:“prop”,    icon:“√” },
+{ name:“FREE PARK”, color:”#22c55e”, price:0,   rent:0,   type:“free”,    icon:“⭐” },
+{ name:“Matrix Mews”,  color:”#e879f9”, price:220, rent:65,  type:“prop”,    icon:“🔲” },
+{ name:“QUESTION?”, color:”#a78bfa”, price:0,   rent:0,   type:“question”,icon:“❓” },
+{ name:“Pi Place”,     color:”#f43f5e”, price:260, rent:75,  type:“prop”,    icon:“π” },
+{ name:“Sine St”,      color:”#f43f5e”, price:260, rent:75,  type:“prop”,    icon:”〰” },
+{ name:“Cosine Ct”,    color:”#f43f5e”, price:280, rent:80,  type:“prop”,    icon:“📈” },
+{ name:“CHANCE”,    color:”#fbbf24”, price:0,   rent:0,   type:“chance”,  icon:“🎲” },
+{ name:“Tangent Ter”,  color:”#0ea5e9”, price:300, rent:90,  type:“prop”,    icon:“📉” },
+{ name:“Limit Ln”,     color:”#0ea5e9”, price:300, rent:90,  type:“prop”,    icon:“∞” },
+{ name:“Calculus Ct”,  color:”#0ea5e9”, price:320, rent:100, type:“prop”,    icon:“∫” },
+{ name:“QUESTION?”, color:”#a78bfa”, price:0,   rent:0,   type:“question”,icon:“❓” },
+];
+
+const BOARD_LAYOUT = (() => {
+const p = [];
+for(let i=0;i<7;i++) p.push({r:6,c:i});
+for(let i=1;i<7;i++) p.push({r:6-i,c:6});
+for(let i=1;i<7;i++) p.push({r:0,c:6-i});
+for(let i=1;i<6;i++) p.push({r:i,c:0});
+return p;
+})();
+
+const QUESTION_CARDS = [
+{ text:“Math genius! Collect $200”, effect:(m)=>({…m,money:m.money+200}) },
+{ text:“Tuition bill! Pay $150”,    effect:(m)=>({…m,money:m.money-150}) },
+{ text:“Won math contest! +$250”,   effect:(m)=>({…m,money:m.money+250}) },
+{ text:“Calculator broke! Pay $50”, effect:(m)=>({…m,money:m.money-50})  },
+{ text:“Scholarship awarded! +$300”,effect:(m)=>({…m,money:m.money+300}) },
+{ text:“Library fine! Pay $40”,     effect:(m)=>({…m,money:m.money-40})  },
+];
+
+const CHANCE_CARDS = [
+{ text:“Lucky roll! Advance to GO + collect $200”, type:“goto”, val:0 },
+{ text:“Tax refund! Collect $100”,                 type:“money”, val:100 },
+{ text:“School supplies! Pay $80”,                 type:“money”, val:-80 },
+{ text:“Math award! Collect $150”,                 type:“money”, val:150 },
+{ text:“Emergency repair! Pay $120”,               type:“money”, val:-120 },
+{ text:“Bonus marks! Collect $50”,                 type:“money”, val:50 },
+];
+
+const SYMBOLS = [
+{s:“🚀”,n:“Rocket”},{s:“🦁”,n:“Lion”},{s:“🐉”,n:“Dragon”},
+{s:“⚡”,n:“Lightning”},{s:“🌟”,n:“Star”},{s:“🔥”,n:“Fire”},
+{s:“🎯”,n:“Target”},{s:“🦊”,n:“Fox”},{s:“🐺”,n:“Wolf”},
+{s:“🦅”,n:“Eagle”},{s:“🎮”,n:“Controller”},{s:“🧠”,n:“Brain”},
+];
+const AI_SYMS = [“🤖”,“💻”,“🖥️”,“🧮”];
+
+const generateQ = (difficulty) => {
+const vars = [“x”,“y”,“z”,“a”,“b”,“n”];
+const v = vars[Math.floor(Math.random()*vars.length)];
+const easy = [
+{q:“1/2 + 1/4”,a:“3/4”,hint:“LCD=4: 2/4+1/4”},
+{q:“3/4 − 1/4”,a:“1/2”,hint:”(3−1)/4=2/4=1/2”},
+{q:“1/3 + 1/3”,a:“2/3”,hint:”(1+1)/3=2/3”},
+{q:“5/6 − 1/6”,a:“2/3”,hint:“4/6=2/3”},
+{q:“2/5 + 1/5”,a:“3/5”,hint:“same denom”},
+{q:“7/8 − 3/8”,a:“1/2”,hint:“4/8=1/2”},
+];
+const medium = [
+{q:`${v}/3 + ${v}/6`,a:`${v}/2`,hint:`LCD=6: 3${v}/6`},
+{q:`2${v}/5 − ${v}/5`,a:`${v}/5`,hint:`(2-1)${v}/5`},
+{q:`${v}/2 + ${v}/4`,a:`3${v}/4`,hint:`LCD=4: 3${v}/4`},
+{q:`3${v}/4 − ${v}/2`,a:`${v}/4`,hint:`LCD=4: ${v}/4`},
+{q:`${v}/3 + ${v}/4`,a:`7${v}/12`,hint:`LCD=12`},
+{q:`5${v}/6 − ${v}/3`,a:`${v}/2`,hint:`LCD=6`},
+];
+const hard = [
+{q:`(${v}+1)/3 + (${v}−1)/6`,a:`(3${v}+1)/6`,hint:`LCD=6`},
+{q:`2${v}/5 + (${v}+3)/10`,a:`(5${v}+3)/10`,hint:`LCD=10`},
+{q:`(2${v}+1)/4 − ${v}/2`,a:`1/4`,hint:`LCD=4`},
+{q:`3/(2${v}) + 1/(4${v})`,a:`7/(4${v})`,hint:`LCD=4${v}`},
+{q:`(${v}+2)/3 − (${v}−1)/3`,a:`1`,hint:`same denom`},
+{q:`1/(2${v}) + 1/(3${v})`,a:`5/(6${v})`,hint:`LCD=6${v}`},
+];
+const pool = difficulty===“easy”?easy:difficulty===“medium”?medium:hard;
+return pool[Math.floor(Math.random()*pool.length)];
+};
+
+const aiHit = d => Math.random()<(d===“easy”?.93:d===“medium”?.78:.62);
+
+/* ══════════════════════════════════════════════════════════
+CSS
+══════════════════════════════════════════════════════════ */
+const CSS = `
+@import url(‘https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;700;800;900&display=swap’);
+*{box-sizing:border-box;margin:0;padding:0}
+body,#root{min-height:100vh;overflow-x:hidden}
+
+/* Sky & ground */
+.game-bg{
+background:linear-gradient(180deg,#87CEEB 0%,#b0e0ff 45%,#c8f0a0 45%,#7ec850 55%,#5aaf2a 100%);
+position:relative;overflow:hidden;
+}
+
+/* Clouds */
+@keyframes cloudDrift{from{transform:translateX(-200px)}to{transform:translateX(110vw)}}
+.cloud{position:absolute;background:white;border-radius:50px;opacity:.88;animation:cloudDrift linear infinite}
+.cloud::before,.cloud::after{content:’’;position:absolute;background:white;border-radius:50%}
+.cloud::before{width:60%;height:100%;top:-40%;left:10%}
+.cloud::after{width:45%;height:80%;top:-25%;right:8%}
+
+/* Animals & Mr Monopoly running */
+@keyframes runRight{from{transform:translateX(-120px)}to{transform:translateX(110vw)}}
+@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+.runner{position:absolute;bottom:2%;animation:runRight linear infinite;font-size:2rem;filter:drop-shadow(2px 2px 2px rgba(0,0,0,.3))}
+.runner span{display:inline-block;animation:bounce .4s ease-in-out infinite}
+
+/* Flowers */
+.flower{position:absolute;bottom:0;font-size:1.2rem;animation:none}
+
+/* Animations */
+@keyframes floatY{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+@keyframes popIn{0%{transform:scale(.5);opacity:0}80%{transform:scale(1.07)}100%{transform:scale(1);opacity:1}}
+@keyframes shakeLR{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
+@keyframes spinZ{to{transform:rotate(360deg)}}
+@keyframes glowGold{0%,100%{box-shadow:0 0 8px #FFD70066}50%{box-shadow:0 0 22px #FFD700cc}}
+@keyframes coinBounce{0%{transform:translateY(0) scale(1)}50%{transform:translateY(-12px) scale(1.1)}100%{transform:translateY(0) scale(1)}}
+@keyframes fadeSlideUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulsate{0%,100%{opacity:.5}50%{opacity:1}}
+@keyframes grassWave{0%,100%{transform:skewX(0deg)}50%{transform:skewX(3deg)}}
+
+.pop{animation:popIn .35s cubic-bezier(.34,1.56,.64,1)}
+.shake{animation:shakeLR .4s ease-out}
+input:focus{outline:none}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:#ffffff55;border-radius:4px}
+
+.tile-hover:hover{transform:scale(1.08);z-index:10;transition:transform .15s}
+button:active{transform:scale(.96)!important}
+`;
+
+/* ══════════════════════════════════════════════════════════
+SMALL UI COMPONENTS
+══════════════════════════════════════════════════════════ */
+const Btn = ({ch,onClick,color=”#FFD700”,sz=“md”,dis=false,full=false,st={}})=>{
+const p=sz===“lg”?“14px 32px”:sz===“sm”?“6px 14px”:“10px 20px”;
+const f=sz===“lg”?20:sz===“sm”?12:14;
+return(
+<button onClick={onClick} disabled={dis} style={{
+background:`${color}22`,border:`2.5px solid ${color}`,color,
+fontFamily:”‘Fredoka One’,cursive”,letterSpacing:.8,borderRadius:12,
+padding:p,fontSize:f,cursor:dis?“not-allowed”:“pointer”,
+transition:“all .18s”,opacity:dis?.4:1,width:full?“100%”:“auto”,…st
+}}>{ch}</button>
+);
+};
+
+const MoneyBadge = ({amount,color=”#22c55e”})=>(
+<span style={{background:`${color}22`,border:`1.5px solid ${color}`,color,
+borderRadius:20,padding:“3px 10px”,fontSize:13,fontWeight:800,
+fontFamily:”‘Nunito’,sans-serif”}}>
+💰 ${amount}
+</span>
+);
+
+/* ══════════════════════════════════════════════════════════
+ANIMATED BACKGROUND
+══════════════════════════════════════════════════════════ */
+function AnimatedBG() {
+const clouds = [
+{w:120,h:40,top:“6%”,dur:28,delay:0},
+{w:90,h:30,top:“12%”,dur:22,delay:-8},
+{w:150,h:50,top:“4%”,dur:35,delay:-15},
+{w:80,h:28,top:“18%”,dur:20,delay:-5},
+{w:110,h:36,top:“9%”,dur:30,delay:-20},
+];
+const runners = [
+{sym:“🐄”,dur:18,delay:0,bot:“3%”,sz:28},
+{sym:“🐎”,dur:12,delay:-5,bot:“2.5%”,sz:30},
+{sym:“🐑”,dur:22,delay:-10,bot:“2%”,sz:22},
+{sym:“🐓”,dur:16,delay:-3,bot:“1.8%”,sz:20},
+{sym:“🦆”,dur:20,delay:-14,bot:“2%”,sz:20},
+{sym:“🎩🧔”,dur:10,delay:-7,bot:“1.5%”,sz:26},
+];
+const flowers = [“🌻”,“🌸”,“🌼”,“🌷”,“🌺”,“🍀”,“🌿”,“🌾”];
+return (
+<>
+{clouds.map((c,i)=>(
+<div key={i} className=“cloud” style={{
+width:c.w,height:c.h,top:c.top,left:”-200px”,
+animationDuration:`${c.dur}s`,animationDelay:`${c.delay}s`
+}}/>
+))}
+{[…Array(18)].map((_,i)=>(
+<div key={i} className=“flower” style={{
+left:`${(i*5.8+2)%100}%`,
+fontSize:`${1+Math.random()*.8}rem`,
+opacity:.7+Math.random()*.3
+}}>{flowers[i%flowers.length]}</div>
+))}
+{runners.map((r,i)=>(
+<div key={i} className=“runner” style={{
+bottom:r.bot,fontSize:r.sz,
+animationDuration:`${r.dur}s`,animationDelay:`${r.delay}s`
+}}>
+<span>{r.sym}</span>
+</div>
+))}
+</>
+);
+}
+
+/* ══════════════════════════════════════════════════════════
+BOARD
+══════════════════════════════════════════════════════════ */
+function Board({apos,symbols,owned,isMulti}) {
+const grid = Array(7).fill(null).map(()=>Array(7).fill(null));
+BOARD_LAYOUT.forEach((p,i)=>{ grid[p.r][p.c]=i; });
+
+return(
+<div style={{display:“grid”,gridTemplateColumns:“repeat(7,1fr)”,
+gridTemplateRows:“repeat(7,1fr)”,width:“100%”,aspectRatio:“1”,
+gap:2,borderRadius:14,overflow:“hidden”,
+border:“4px solid rgba(255,255,255,0.6)”,
+boxShadow:“0 8px 32px rgba(0,0,0,0.25),inset 0 0 0 2px rgba(255,255,255,0.3)”}}>
+{grid.map((row,ri)=>row.map((idx,ci)=>{
+if(idx===null) return(
+<div key={`${ri}-${ci}`} style={{gridRow:ri+1,gridColumn:ci+1,
+background:“linear-gradient(135deg,rgba(255,255,255,0.85),rgba(220,255,200,0.9))”,
+display:“flex”,alignItems:“center”,justifyContent:“center”}}>
+{ri===3&&ci===3&&(
+<div style={{textAlign:“center”,lineHeight:1.1}}>
+<div style={{fontFamily:”‘Fredoka One’,cursive”,
+fontSize:“clamp(8px,1.4vw,15px)”,color:”#166534”,
+textShadow:“1px 1px 0 #bbf7d0”,letterSpacing:.5}}>MATH</div>
+<div style={{fontFamily:”‘Fredoka One’,cursive”,
+fontSize:“clamp(8px,1.4vw,15px)”,color:”#166534”,letterSpacing:.5}}>OPOLY</div>
+<div style={{fontSize:“clamp(10px,1.8vw,20px)”}}>🎓</div>
+</div>
+)}
+</div>
+);
+const td = TILE_DATA[idx];
+const here = apos.map((p,pi)=>p===idx?pi:-1).filter(x=>x>=0);
+const isHere = here.length>0;
+const ownerIdx = owned[idx];
+const ownerColor = ownerIdx===0?”#3b82f6”:ownerIdx===1?”#ef4444”:null;
+return(
+<div key={`${ri}-${ci}`} className=“tile-hover” style={{
+gridRow:ri+1,gridColumn:ci+1,
+background:isHere?`${td.color}55`:`${td.color}28`,
+border:`2px solid ${isHere?"#FFD700":ownerColor||td.color}`,
+borderRadius:4,display:“flex”,flexDirection:“column”,
+alignItems:“center”,justifyContent:“center”,
+position:“relative”,overflow:“hidden”,cursor:“default”,
+boxShadow:isHere?`0 0 12px #FFD700,0 0 4px #FFD700`:“none”,
+transition:“all .25s”,
+}}>
+{ownerColor&&<div style={{position:“absolute”,top:0,left:0,right:0,
+height:3,background:ownerColor}}/>}
+{isHere&&<div style={{position:“absolute”,inset:0,
+background:“rgba(255,215,0,0.2)”,animation:“pulsate .8s infinite”}}/>}
+<div style={{fontSize:“clamp(5px,.85vw,9px)”,color:”#1a1a1a”,
+fontWeight:800,textAlign:“center”,zIndex:1,lineHeight:1.1,
+fontFamily:”‘Nunito’,sans-serif”,padding:“0 1px”}}>
+{td.icon}
+</div>
+<div style={{fontSize:“clamp(4px,.7vw,7px)”,color:”#333”,
+fontWeight:700,textAlign:“center”,zIndex:1,lineHeight:1,
+fontFamily:”‘Nunito’,sans-serif”,maxWidth:“100%”,
+overflow:“hidden”,textOverflow:“ellipsis”,whiteSpace:“nowrap”,padding:“0 1px”}}>
+{td.name.length>8?td.name.split(” “)[0]:td.name}
+</div>
+{td.price>0&&<div style={{fontSize:“clamp(4px,.65vw,7px)”,color:”#166534”,
+fontWeight:800,zIndex:1,fontFamily:”‘Nunito’,sans-serif”}}>
+${td.price}
+</div>}
+{isHere&&<div style={{fontSize:“clamp(8px,1.4vw,14px)”,zIndex:2,lineHeight:1,
+filter:“drop-shadow(0 0 3px gold)”}}>
+{here.map(pi=>symbols[pi]).join(””)}
+</div>}
+</div>
+);
+}))}
+</div>
+);
+}
+
+/* ══════════════════════════════════════════════════════════
+PANEL CARD WRAPPER
+══════════════════════════════════════════════════════════ */
+const Card = ({children,border=”#ffffff55”,bg=“rgba(255,255,255,0.82)”,st={}})=>(
+
+  <div style={{background:bg,border:`2px solid ${border}`,borderRadius:16,
+    padding:12,backdropFilter:"blur(8px)",boxShadow:"0 4px 16px rgba(0,0,0,0.15)",...st}}>
+    {children}
+  </div>
+);
+
+/* ══════════════════════════════════════════════════════════
+QUESTION PANEL
+══════════════════════════════════════════════════════════ */
+function QPanel({q,ans,setAns,onSubmit,onHint,showHint,color,iref,dis}) {
+return(
+<Card border={color} bg=“rgba(255,255,255,0.92)” st={{animation:“popIn .35s cubic-bezier(.34,1.56,.64,1)”}}>
+<div style={{fontFamily:”‘Fredoka One’,cursive”,color,fontSize:13,marginBottom:6,letterSpacing:.5}}>
+🧮 SOLVE TO ADVANCE!
+</div>
+<div style={{background:`${color}18`,border:`2px solid ${color}55`,borderRadius:10,
+padding:“10px 8px”,fontSize:“clamp(14px,2.5vw,22px)”,fontWeight:800,
+color:”#1e293b”,textAlign:“center”,fontFamily:”‘Nunito’,sans-serif”,marginBottom:8}}>
+{q.q} = ?
+</div>
+{showHint&&<div style={{background:”#fef3c7”,border:“1.5px solid #f59e0b”,borderRadius:8,
+padding:“6px 10px”,color:”#92400e”,fontSize:12,fontWeight:600,
+fontFamily:”‘Nunito’,sans-serif”,marginBottom:8}}>💡 {q.hint}</div>}
+<input ref={iref} value={ans} onChange={e=>setAns(e.target.value)}
+onKeyDown={e=>e.key===“Enter”&&!dis&&onSubmit()}
+disabled={dis} placeholder=‘e.g. 3x/4 or 1/2’
+style={{background:“white”,border:`2px solid ${color}88`,
+borderRadius:10,padding:“9px 12px”,color:”#1e293b”,fontSize:15,
+width:“100%”,fontWeight:800,marginBottom:8}}/>
+<div style={{display:“flex”,gap:8}}>
+<Btn ch="✓ SUBMIT" onClick={onSubmit} color={color} dis={dis} full st={{flex:1}} />
+<Btn ch={showHint?“🙈”:“💡”} onClick={onHint} color=”#f59e0b” sz=“sm” />
+</div>
+</Card>
+);
+}
+
+/* ══════════════════════════════════════════════════════════
+PROPERTY CARD / BUY PROMPT
+══════════════════════════════════════════════════════════ */
+function BuyPrompt({tile,idx,playerMoney,playerColor,playerName,onBuy,onSkip}) {
+const canAfford = playerMoney >= tile.price;
+return(
+<Card border=”#f59e0b” bg=“rgba(255,255,255,0.95)” st={{animation:“popIn .3s ease-out”}}>
+<div style={{textAlign:“center”,marginBottom:8}}>
+<div style={{fontSize:28}}>{tile.icon}</div>
+<div style={{fontFamily:”‘Fredoka One’,cursive”,fontSize:18,color:”#1e293b”}}>{tile.name}</div>
+<div style={{fontSize:12,color:”#64748b”,fontFamily:”‘Nunito’,sans-serif”}}>Space #{idx}</div>
+</div>
+<div style={{display:“grid”,gridTemplateColumns:“1fr 1fr”,gap:6,marginBottom:10}}>
+{[[“Price”,”$”+tile.price,”#166534”],[“Rent”,”$”+tile.rent,”#b45309”],
+[“Your $”,”$”+playerMoney,canAfford?”#166534”:”#dc2626”]].map(([l,v,c])=>(
+<div key={l} style={{background:`${c}12`,border:`1px solid ${c}44`,borderRadius:8,
+padding:“6px 8px”,textAlign:“center”}}>
+<div style={{fontSize:10,color:”#64748b”,fontFamily:”‘Nunito’,sans-serif”,fontWeight:700}}>{l}</div>
+<div style={{fontSize:14,fontWeight:800,color:c,fontFamily:”‘Fredoka One’,cursive”}}>{v}</div>
+</div>
+))}
+</div>
+{canAfford ? (
+<div style={{display:“flex”,gap:8}}>
+<Btn ch="🏠 BUY!" onClick={onBuy} color="#22c55e" full st={{flex:1}} />
+<Btn ch="Pass" onClick={onSkip} color="#94a3b8" sz="sm" />
+</div>
+):(
+<>
+<div style={{background:”#fee2e2”,border:“1.5px solid #ef4444”,borderRadius:8,
+padding:“7px 10px”,color:”#dc2626”,fontSize:12,fontWeight:700,
+fontFamily:”‘Nunito’,sans-serif”,textAlign:“center”,marginBottom:8}}>
+❌ Not enough money!
+</div>
+<Btn ch="Continue" onClick={onSkip} color="#94a3b8" full />
+</>
+)}
+</Card>
+);
+}
+
+/* ══════════════════════════════════════════════════════════
+MAIN APP
+══════════════════════════════════════════════════════════ */
+export default function Mathopoly() {
+// ── screens: menu | rules | setup | game | result
+const [screen, setScreen] = useState(“menu”);
+const [gameMode, setGameMode] = useState(null);
+const [diff, setDiff] = useState(“medium”);
+const [p1sym, setP1sym] = useState(“🚀”);
+const [p2sym, setP2sym] = useState(“🦁”);
+const [p1name, setP1name] = useState(“Player 1”);
+const [p2name, setP2name] = useState(“Player 2”);
+const [aiSym] = useState(AI_SYMS[Math.floor(Math.random()*AI_SYMS.length)]);
+
+// ── game state
+const [pos, setPos]       = useState([0,0]);
+const [apos, setApos]     = useState([0,0]);
+const [money, setMoney]   = useState([START_MONEY, START_MONEY]);
+const [lives, setLives]   = useState([3,3]);
+const [round, setRound]   = useState(1);
+const [scores, setScores] = useState([0,0]);
+const [turn, setTurn]     = useState(0);
+const [phase, setPhase]   = useState(“roll”); // roll|question|buy|card|ai-thinking|feedback
+const [dice, setDice]     = useState(null);
+const [rolling, setRolling] = useState(false);
+const [moving, setMoving]   = useState(false);
+const [owned, setOwned]   = useState({}); // {tileIdx: playerIdx}
+const [question, setQuestion] = useState(null);
+const [cardData, setCardData] = useState(null); // {text, moneyDelta, pi}
+const [ans, setAns]       = useState([””,””]);
+const [hints, setHints]   = useState([false,false]);
+const [fb, setFb]         = useState(null);
+const [log, setLog]       = useState([]);
+const [pendingBuy, setPendingBuy] = useState(null); // {tileIdx, pi}
+const iref0 = useRef(null);
+const iref1 = useRef(null);
+
+const isSolo  = gameMode===“solo”;
+const isMulti = gameMode===“multi”;
+const syms    = [p1sym, isSolo?aiSym:p2sym];
+const names   = [p1name, isSolo?`CPU ${aiSym}`:p2name];
+const P1C = “#2563eb”, P2C = “#dc2626”;
+const colors  = [P1C, P2C];
+
+const addLog = (msg,type=“info”)=>
+setLog(l=>[{msg,type,id:Date.now()+Math.random()},…l.slice(0,9)]);
+
+// ── advance turn
+const advanceTurn = useCallback((nl, nm, ns) => {
+if(nl[0]<=0||nl[1]<=0||nm[0]<=0||nm[1]<=0||round>=MAX_ROUNDS){
+setScreen(“result”); return;
+}
+setFb(null); setAns([””,””]); setHints([false,false]); setPendingBuy(null);
+if(isMulti) setTurn(t=>(t+1)%2);
+setPhase(“roll”); setRound(r=>r+1);
+},[round,isMulti]);
+
+// ── process math answer
+const processAns = useCallback((pi, correct, q, curLives, curMoney, curScores)=>{
+const pts = diff===“easy”?10:diff===“medium”?20:35;
+const bonus = diff===“easy”?30:diff===“medium”?50:80;
+const nl=[…curLives], nm=[…curMoney], ns=[…curScores];
+if(correct){
+nm[pi]+=bonus; ns[pi]+=pts;
+setMoney([…nm]); setScores([…ns]);
+setFb({pi,ok:true,msg:`✅ Correct! +$${bonus} & +${pts}pts`});
+addLog(`✅ ${names[pi]} correct! +$${bonus} +${pts}pts`,“good”);
+} else {
+nl[pi]-=1; nm[pi]=Math.max(0,nm[pi]-50);
+setLives([…nl]); setMoney([…nm]);
+setFb({pi,ok:false,msg:`❌ Wrong! Answer: ${q.a}. -$50`});
+addLog(`❌ ${names[pi]} wrong. -$50, ❤️ left: ${nl[pi]}`,“bad”);
+}
+setPhase(“feedback”);
+setTimeout(()=>advanceTurn(nl,nm,ns),2000);
+},[diff,names,advanceTurn]);
+
+// ── land on tile
+const landOn = useCallback((tilePos, pi, curLives, curMoney, curScores)=>{
+const td = TILE_DATA[tilePos];
+
+```
+if(td.type==="start"){
+  const nm=[...curMoney]; nm[pi]+=200;
+  setMoney([...nm]);
+  addLog(`🏁 ${names[pi]} passed GO! +$200`,"bonus");
+  if(isMulti) setTurn(t=>(t+1)%2);
+  setPhase("roll"); setRound(r=>r+1); return;
+}
+if(td.type==="free"){
+  const nm=[...curMoney]; nm[pi]+=100;
+  setMoney([...nm]);
+  addLog(`⭐ ${names[pi]} FREE PARKING! +$100`,"bonus");
+  if(isMulti) setTurn(t=>(t+1)%2);
+  setPhase("roll"); setRound(r=>r+1); return;
+}
+if(td.type==="jail"){
+  const q=generateQ(diff);
+  setQuestion(q); setAns(["",""]); setHints([false,false]);
+  addLog(`⚖️ ${names[pi]} landed on JAIL! Solve to escape.`,"warn");
+  if(isSolo&&pi===1){
+    setPhase("ai-thinking");
+    setTimeout(()=>processAns(1,aiHit(diff),q,[...curLives],[...curMoney],[...curScores]),1500);
+  } else { setPhase("question"); }
+  return;
+}
+if(td.type==="tax"){
+  const nm=[...curMoney]; nm[pi]=Math.max(0,nm[pi]-td.rent);
+  setMoney([...nm]);
+  addLog(`💸 ${names[pi]} paid TAX $${td.rent}`,"bad");
+  setFb({pi,ok:false,msg:`💸 Tax! Paid $${td.rent}`});
+  setPhase("feedback");
+  setTimeout(()=>advanceTurn(curLives,nm,curScores),2000); return;
+}
+if(td.type==="chance"){
+  const card=CHANCE_CARDS[Math.floor(Math.random()*CHANCE_CARDS.length)];
+  const nm=[...curMoney];
+  if(card.type==="money") nm[pi]=Math.max(0,nm[pi]+card.val);
+  setMoney([...nm]);
+  setCardData({text:card.text,val:card.val,pi,type:"chance"});
+  addLog(`🎲 ${names[pi]} CHANCE: ${card.text}`,"bonus");
+  setPhase("card");
+  setTimeout(()=>advanceTurn(curLives,nm,curScores),2500); return;
+}
+if(td.type==="question"){
+  const card=QUESTION_CARDS[Math.floor(Math.random()*QUESTION_CARDS.length)];
+  const nm=[...curMoney];
+  const updated=card.effect({money:nm[pi]});
+  nm[pi]=Math.max(0,updated.money);
+  setMoney([...nm]);
+  setCardData({text:card.text,pi,type:"question"});
+  addLog(`❓ ${names[pi]} QUESTION MARK: ${card.text}`,"bonus");
+  setPhase("card");
+  setTimeout(()=>advanceTurn(curLives,nm,curScores),2500); return;
+}
+if(td.type==="prop"){
+  const currentOwner = owned[tilePos];
+  if(currentOwner===undefined){
+    // Unowned — offer to buy (only show prompt for human players)
+    if(isSolo&&pi===1){
+      // AI decides based on money
+      if(curMoney[1]>=td.price&&Math.random()>.3){
+        const nm=[...curMoney]; nm[1]-=td.price;
+        setMoney([...nm]);
+        setOwned(o=>({...o,[tilePos]:1}));
+        addLog(`🤖 AI bought ${td.name} for $${td.price}`,"info");
+      }
+      // Still ask math question
+      const q=generateQ(diff);
+      setQuestion(q); setAns(["",""]); setHints([false,false]);
+      setPhase("ai-thinking");
+      setTimeout(()=>processAns(1,aiHit(diff),q,[...curLives],[...curMoney],[...curScores]),1500);
+    } else {
+      setPendingBuy({tileIdx:tilePos, pi});
+      setPhase("buy");
+    }
+  } else if(currentOwner!==pi){
+    // Owned by opponent — pay rent!
+    const nm=[...curMoney], ns=[...curScores];
+    nm[pi]=Math.max(0,nm[pi]-td.rent);
+    nm[currentOwner]+=td.rent;
+    ns[currentOwner]+=td.rent;
+    setMoney([...nm]); setScores([...ns]);
+    setFb({pi,ok:false,msg:`🏠 Paid rent $${td.rent} to ${names[currentOwner]}`});
+    addLog(`💰 ${names[pi]} paid $${td.rent} rent to ${names[currentOwner]}`,"bad");
+    setPhase("feedback");
+    // Still do math question after rent
+    setTimeout(()=>{
+      const q=generateQ(diff);
+      setQuestion(q); setAns(["",""]); setHints([false,false]); setFb(null);
+      if(isSolo&&pi===1){
+        setPhase("ai-thinking");
+        setTimeout(()=>processAns(1,aiHit(diff),q,[...nm],[...nm],[...ns]),1500);
+      } else { setPhase("question"); }
+    },1500);
+  } else {
+    // Own it — just do math question
+    const q=generateQ(diff);
+    setQuestion(q); setAns(["",""]); setHints([false,false]);
+    addLog(`🏠 ${names[pi]} landed on their own property — solve for bonus!`,"info");
+    if(isSolo&&pi===1){
+      setPhase("ai-thinking");
+      setTimeout(()=>processAns(1,aiHit(diff),q,[...curLives],[...curMoney],[...curScores]),1500);
+    } else { setPhase("question"); }
+  }
+}
+```
+
+},[diff,names,owned,isMulti,isSolo,advanceTurn,processAns]);
+
+// ── buy / skip
+const doBuy = ()=>{
+if(!pendingBuy) return;
+const {tileIdx,pi}=pendingBuy;
+const td=TILE_DATA[tileIdx];
+const nm=[…money]; nm[pi]-=td.price;
+setMoney([…nm]);
+setOwned(o=>({…o,[tileIdx]:pi}));
+addLog(`🏠 ${names[pi]} bought ${td.name} for $${td.price}`,“bonus”);
+setPendingBuy(null);
+// Now do math question
+const q=generateQ(diff);
+setQuestion(q); setAns([””,””]); setHints([false,false]);
+setPhase(“question”);
+};
+const skipBuy = ()=>{
+setPendingBuy(null);
+const q=generateQ(diff);
+setQuestion(q); setAns([””,””]); setHints([false,false]);
+setPhase(“question”);
+};
+
+// ── submit answer
+const submitAns = pi=>{
+if(!ans[pi].trim()||!question) return;
+const norm=s=>s.replace(/\s+/g,””).toLowerCase();
+const correct=norm(ans[pi])===norm(question.a);
+processAns(pi,correct,question,[…lives],[…money],[…scores]);
+};
+
+// ── move player
+const movePlayer = useCallback((pi,steps,cL,cM,cS)=>{
+setMoving(true);
+let cur=pos[pi], s=0;
+const iv=setInterval(()=>{
+cur=(cur+1)%BOARD_SIZE;
+setApos(p=>{const n=[…p];n[pi]=cur;return n;});
+s++;
+if(s>=steps){
+clearInterval(iv); setMoving(false);
+setPos(p=>{const n=[…p];n[pi]=cur;return n;});
+landOn(cur,pi,cL,cM,cS);
+}
+},190);
+},[pos,landOn]);
+
+// ── roll dice
+const rollDice = ()=>{
+if(rolling||moving||phase!==“roll”) return;
+const pi=turn;
+setRolling(true);
+let c=0;
+const iv=setInterval(()=>{
+setDice(Math.floor(Math.random()*6)+1);
+c++;
+if(c>10){
+clearInterval(iv);
+const f=Math.floor(Math.random()*6)+1;
+setDice(f); setRolling(false);
+addLog(`${syms[pi]} ${names[pi]} rolled ${f}`,“info”);
+movePlayer(pi,f,[…lives],[…money],[…scores]);
+}
+},80);
+};
+
+// Solo: after human turn, AI auto-rolls
+useEffect(()=>{
+if(!isSolo||phase!==“roll”||turn!==0) return;
+// nothing – human always rolls manually in solo (AI moves happen inside landOn)
+},[]);
+
+// Focus input
+useEffect(()=>{
+if(phase===“question”){
+if(turn===0&&iref0.current) iref0.current.focus();
+if(turn===1&&iref1.current) iref1.current.focus();
+}
+},[phase,turn]);
+
+const startGame=()=>{
+setPos([0,0]); setApos([0,0]);
+setMoney([START_MONEY,START_MONEY]);
+setLives([3,3]); setScores([0,0]);
+setDice(null); setPhase(“roll”); setRound(1);
+setLog([]); setOwned({}); setQuestion(null);
+setAns([””,””]); setHints([false,false]);
+setFb(null); setTurn(0); setPendingBuy(null);
+setScreen(“game”);
+addLog(`🎓 Mathopoly! ${names[0]} goes first!`,“bonus”);
+};
+
+const diceFaces=[””,“⚀”,“⚁”,“⚂”,“⚃”,“⚄”,“⚅”];
+
+// ─── Count owned props per player
+const p0props = Object.values(owned).filter(v=>v===0).length;
+const p1props = Object.values(owned).filter(v=>v===1).length;
+
+/* ══════════ MENU ══════════ */
+if(screen===“menu”) return(
+<div className=“game-bg” style={{minHeight:“100vh”,display:“flex”,flexDirection:“column”,
+alignItems:“center”,justifyContent:“center”,padding:24,position:“relative”,overflow:“hidden”}}>
+<style>{CSS}</style>
+<AnimatedBG/>
+<div style={{position:“relative”,zIndex:10,textAlign:“center”,display:“flex”,
+flexDirection:“column”,alignItems:“center”,gap:24}}>
+<div style={{animation:“floatY 3s ease-in-out infinite”}}>
+<div style={{fontFamily:”‘Fredoka One’,cursive”,
+fontSize:“clamp(52px,11vw,100px)”,
+color:”#166534”,letterSpacing:4,lineHeight:1,
+textShadow:“3px 3px 0 #bbf7d0,6px 6px 0 #86efac,0 0 40px rgba(34,197,94,.4)”}}>
+MATHOPOLY
+</div>
+<div style={{fontFamily:”‘Fredoka One’,cursive”,fontSize:“clamp(14px,2.5vw,22px)”,
+color:”#14532d”,letterSpacing:3,marginTop:4,
+textShadow:“1px 1px 0 rgba(255,255,255,.7)”}}>
+🎲 The Ultimate Math Board Game 💰
+</div>
+</div>
+<Card bg=“rgba(255,255,255,0.88)” border=”#86efac” st={{padding:“24px 32px”,maxWidth:480}}>
+<div style={{fontFamily:”‘Nunito’,sans-serif”,color:”#166534”,fontSize:14,
+marginBottom:20,fontWeight:700,textAlign:“center”}}>
+🏠 Buy properties · 🧮 Solve fractions · 💰 Earn money · 👑 Win big!
+</div>
+<div style={{display:“flex”,gap:16,flexWrap:“wrap”,justifyContent:“center”}}>
+{[{mode:“solo”,label:“🧑‍💻 SOLO vs AI”,sub:“You vs Computer”,c:”#2563eb”},
+{mode:“multi”,label:“👥 MULTIPLAYER”,sub:“2 Players · Split Screen”,c:”#dc2626”}
+].map(({mode,label,sub,c})=>(
+<button key={mode} onClick={()=>{setGameMode(mode);setScreen(“rules”);}} style={{
+background:`${c}15`,border:`3px solid ${c}`,color:c,
+fontFamily:”‘Fredoka One’,cursive”,fontSize:“clamp(16px,3vw,22px)”,
+padding:“14px 28px”,borderRadius:16,cursor:“pointer”,
+boxShadow:`0 4px 20px ${c}33`,transition:“all .2s”,
+display:“flex”,flexDirection:“column”,alignItems:“center”,gap:3}}>
+{label}
+<span style={{fontSize:12,fontFamily:”‘Nunito’,sans-serif”,fontWeight:700,opacity:.8}}>{sub}</span>
+</button>
+))}
+</div>
+</Card>
+</div>
+</div>
+);
+
+/* ══════════ RULES ══════════ */
+if(screen===“rules”){
+const rules=[
+{i:“🎲”,t:“Roll & Move”,d:“Roll the dice and move clockwise around 28 named spaces. Each space has its own name, color, and price!”},
+{i:“🏠”,t:“Buy Properties”,d:`Land on an unowned property and choose to BUY it! The owner earns RENT every time an opponent lands there. Properties cost $60–$320.`},
+{i:“💰”,t:“Rent & Money”,d:“Everyone starts with $1,500. Collect $200 passing GO. Pay rent to property owners. Wrong answers cost $50. Win by having the most money!”},
+{i:“🧮”,t:“Solve Fractions”,d:`Every tile (except special ones) asks a fraction question. Correct = points + money bonus. Wrong = lose $50 + 1 life. Use 💡 hints anytime.`},
+{i:“❓”,t:“Question Mark”,d:“Land on ❓ for a random event card — could win or lose money! No math required.”},
+{i:“🎲”,t:“Chance Cards”,d:“Land on CHANCE 🎲 to draw a card with cash rewards or penalties.”},
+{i:“⭐”,t:“Special Spaces”,d:“🏁 GO = +$200 · ⭐ FREE PARKING = +$100 · 💸 TAX = pay $75 · ⚖️ JAIL = must solve a question to escape”},
+{i:“🏆”,t:“Winning”,d:`Game ends after ${MAX_ROUNDS} rounds or when someone runs out of lives/money. Highest score + most money wins!`},
+];
+return(
+<div className=“game-bg” style={{minHeight:“100vh”,display:“flex”,flexDirection:“column”,
+alignItems:“center”,justifyContent:“center”,padding:20,position:“relative”,overflowY:“auto”}}>
+<style>{CSS}</style>
+<AnimatedBG/>
+<div className=“pop” style={{position:“relative”,zIndex:10,maxWidth:580,width:“100%”,
+display:“flex”,flexDirection:“column”,gap:0}}>
+<Card bg=“rgba(255,255,255,0.92)” border=”#86efac” st={{padding:“24px 20px”}}>
+<div style={{textAlign:“center”,marginBottom:16}}>
+<div style={{fontFamily:”‘Fredoka One’,cursive”,fontSize:“clamp(26px,5vw,44px)”,
+color:”#166534”,letterSpacing:1}}>📖 HOW TO PLAY</div>
+<div style={{color:”#64748b”,fontSize:13,fontFamily:”‘Nunito’,sans-serif”}}>Read before you roll!</div>
+</div>
+<div style={{display:“flex”,flexDirection:“column”,gap:8,maxHeight:“52vh”,overflowY:“auto”,paddingRight:4}}>
+{rules.map(({i,t,d},idx)=>(
+<div key={idx} style={{display:“flex”,gap:12,alignItems:“flex-start”,
+padding:“10px 12px”,background:“rgba(240,253,244,0.8)”,
+borderRadius:10,border:“1px solid #bbf7d055”}}>
+<span style={{fontSize:22,flexShrink:0}}>{i}</span>
+<div>
+<div style={{fontWeight:800,color:”#166534”,fontSize:13,marginBottom:2,
+fontFamily:”‘Fredoka One’,cursive”,letterSpacing:.5}}>{t}</div>
+<div style={{color:”#374151”,fontSize:12,lineHeight:1.6,fontFamily:”‘Nunito’,sans-serif”}}>{d}</div>
+</div>
+</div>
+))}
+</div>
+<div style={{display:“flex”,gap:10,justifyContent:“center”,flexWrap:“wrap”,marginTop:14}}>
+<Btn ch=“← Back” onClick={()=>setScreen(“menu”)} color=”#94a3b8” sz=“sm”/>
+<button onClick={()=>setScreen(“setup”)} style={{
+background:“linear-gradient(135deg,#22c55e,#16a34a)”,border:“none”,
+color:“white”,fontFamily:”‘Fredoka One’,cursive”,fontSize:20,
+padding:“12px 32px”,borderRadius:14,cursor:“pointer”,
+boxShadow:“0 4px 20px #22c55e55”,letterSpacing:1}}>
+GOT IT! SET UP →
+</button>
+</div>
+</Card>
+</div>
+</div>
+);
+}
+
+/* ══════════ SETUP ══════════ */
+if(screen===“setup”) return(
+<div className=“game-bg” style={{minHeight:“100vh”,display:“flex”,flexDirection:“column”,
+alignItems:“center”,justifyContent:“center”,padding:20,position:“relative”,overflowY:“auto”}}>
+<style>{CSS}</style>
+<AnimatedBG/>
+<div className=“pop” style={{position:“relative”,zIndex:10,maxWidth:640,width:“100%”,
+display:“flex”,flexDirection:“column”,gap:12}}>
+<Card bg="rgba(255,255,255,0.92)" border="#86efac">
+<div style={{textAlign:“center”,fontFamily:”‘Fredoka One’,cursive”,
+fontSize:“clamp(24px,5vw,42px)”,color:”#166534”,letterSpacing:1,marginBottom:14}}>
+⚙️ PLAYER SETUP
+</div>
+
+```
+      {/* Difficulty */}
+      <div style={{marginBottom:14}}>
+        <div style={{fontWeight:800,color:"#166534",marginBottom:8,fontSize:13,
+          fontFamily:"'Fredoka One',cursive",letterSpacing:.5}}>🎯 Difficulty</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {[["easy","😊 Easy","#22c55e","Pure fractions"],
+            ["medium","😤 Medium","#f59e0b","Fractions + variables"],
+            ["hard","😈 Hard","#ef4444","Complex expressions"]
+          ].map(([d,lbl,c,sub])=>(
+            <button key={d} onClick={()=>setDiff(d)} style={{
+              flex:1,minWidth:90,
+              background:diff===d?`${c}22`:"rgba(255,255,255,0.5)",
+              border:`2.5px solid ${diff===d?c:c+"55"}`,
+              color:diff===d?c:"#64748b",
+              borderRadius:12,padding:"9px 6px",cursor:"pointer",
+              fontFamily:"'Fredoka One',cursive",fontSize:14,letterSpacing:.5,
+              transition:"all .18s",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+              {lbl}
+              <span style={{fontSize:10,fontFamily:"'Nunito',sans-serif",fontWeight:600}}>{sub}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Players */}
+      {[
+        {pi:0,name:p1name,setName:setP1name,sym:p1sym,setSym:setP1sym,color:P1C,lbl:"Player 1"},
+        ...(isMulti?[{pi:1,name:p2name,setName:setP2name,sym:p2sym,setSym:setP2sym,color:P2C,lbl:"Player 2"}]:[])
+      ].map(({pi,name,setName,sym,setSym,color,lbl})=>(
+        <div key={pi} style={{background:`${color}08`,border:`1.5px solid ${color}44`,
+          borderRadius:14,padding:12,marginBottom:10}}>
+          <div style={{fontWeight:800,color,fontSize:13,marginBottom:8,
+            fontFamily:"'Fredoka One',cursive",letterSpacing:.5}}>👤 {lbl}</div>
+          <input value={name} onChange={e=>setName(e.target.value)}
+            placeholder={`${lbl} name`}
+            style={{background:"white",border:`1.5px solid ${color}55`,
+              borderRadius:10,padding:"7px 12px",color:"#1e293b",fontSize:13,
+              width:"100%",marginBottom:10,fontWeight:700,fontFamily:"'Nunito',sans-serif"}}/>
+          <div style={{fontWeight:700,color:"#64748b",fontSize:11,marginBottom:6,
+            fontFamily:"'Nunito',sans-serif"}}>Choose token:</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {SYMBOLS.map(({s,n})=>{
+              const taken=pi===0?(isMulti&&s===p2sym):s===p1sym;
+              return(
+                <button key={s} onClick={()=>!taken&&setSym(s)} title={n} style={{
+                  fontSize:20,padding:"5px 8px",borderRadius:10,
+                  cursor:taken?"not-allowed":"pointer",
+                  background:sym===s?`${color}25`:"rgba(255,255,255,0.7)",
+                  border:`2px solid ${sym===s?color:taken?"#fca5a555":"rgba(0,0,0,0.1)"}`,
+                  transition:"all .15s",opacity:taken?.3:1,
+                  transform:sym===s?"scale(1.2)":"scale(1)"}}>
+                  {s}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      {isSolo&&(
+        <div style={{background:"rgba(239,68,68,0.06)",border:"1.5px solid #ef444455",
+          borderRadius:14,padding:12,marginBottom:10,display:"flex",alignItems:"center",gap:12}}>
+          <span style={{fontSize:32}}>{aiSym}</span>
+          <div>
+            <div style={{fontWeight:800,color:P2C,fontSize:13,fontFamily:"'Fredoka One',cursive",
+              letterSpacing:.5}}>AI Opponent</div>
+            <div style={{color:"#64748b",fontSize:11,marginTop:2,fontFamily:"'Nunito',sans-serif",lineHeight:1.5}}>
+              Plays automatically. Harder difficulty = more AI mistakes!
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
+        <Btn ch="← Rules" onClick={()=>setScreen("rules")} color="#94a3b8" sz="sm"/>
+        <button onClick={startGame} style={{
+          background:"linear-gradient(135deg,#22c55e,#16a34a)",border:"none",
+          color:"white",fontFamily:"'Fredoka One',cursive",fontSize:22,
+          padding:"13px 38px",borderRadius:16,cursor:"pointer",
+          boxShadow:"0 4px 22px #22c55e55",letterSpacing:1,
+          animation:"glowGold 2s infinite"}}>
+          🎲 START GAME!
+        </button>
+      </div>
+    </Card>
+  </div>
+</div>
+```
+
+);
+
+/* ══════════ RESULT ══════════ */
+if(screen===“result”){
+const winner = scores[0]>scores[1]?0:scores[1]>scores[0]?1:money[0]>money[1]?0:money[1]>money[0]?1:-1;
+return(
+<div className=“game-bg” style={{minHeight:“100vh”,display:“flex”,flexDirection:“column”,
+alignItems:“center”,justifyContent:“center”,padding:24,position:“relative”}}>
+<style>{CSS}</style>
+<AnimatedBG/>
+<div className=“pop” style={{position:“relative”,zIndex:10,maxWidth:520,width:“100%”}}>
+<Card bg=“rgba(255,255,255,0.94)” border=”#FFD700” st={{textAlign:“center”,padding:“32px 24px”}}>
+<div style={{fontSize:64,marginBottom:8}}>{winner===-1?“🤝”:syms[winner]}</div>
+<div style={{fontFamily:”‘Fredoka One’,cursive”,fontSize:“clamp(28px,6vw,52px)”,
+color:winner===-1?”#f59e0b”:colors[winner],letterSpacing:2,marginBottom:8}}>
+{winner===-1?“IT’S A TIE!”:winner===0?`${names[0]} WINS!`:`${names[1]} WINS!`}
+</div>
+<div style={{display:“flex”,gap:14,justifyContent:“center”,marginBottom:20,flexWrap:“wrap”}}>
+{[0,1].map(i=>(
+<div key={i} style={{background:`${colors[i]}10`,border:`2px solid ${colors[i]}55`,
+borderRadius:14,padding:“14px 18px”,minWidth:140}}>
+<div style={{fontSize:28}}>{syms[i]}</div>
+<div style={{color:colors[i],fontWeight:800,fontSize:14,
+fontFamily:”‘Fredoka One’,cursive”}}>{names[i]}</div>
+<div style={{fontSize:22,fontWeight:900,color:”#166534”,
+fontFamily:”‘Fredoka One’,cursive”}}>💰${money[i]}</div>
+<div style={{fontSize:14,color:”#64748b”,fontFamily:”‘Nunito’,sans-serif”}}>
+{scores[i]}pts · {p0props+p1props>0?(i===0?p0props:p1props):0} props
+</div>
+<div style={{fontSize:12}}>{“❤️”.repeat(lives[i])}{“🖤”.repeat(3-lives[i])}</div>
+</div>
+))}
+</div>
+<div style={{display:“flex”,gap:10,justifyContent:“center”,flexWrap:“wrap”}}>
+<Btn ch="🔄 Again" onClick={startGame} color="#22c55e"/>
+<Btn ch=“⚙️ Setup” onClick={()=>setScreen(“setup”)} color=”#f59e0b”/>
+<Btn ch=“🏠 Menu” onClick={()=>setScreen(“menu”)} color=”#94a3b8” sz=“sm”/>
+</div>
+</Card>
+</div>
+</div>
+);
+}
+
+/* ══════════ GAME ══════════ */
+const showBuy  = phase===“buy”&&pendingBuy;
+const showCard = phase===“card”&&cardData;
+const showQ0   = phase===“question”&&(isMulti?turn===0:true);
+const showQ1   = isMulti&&phase===“question”&&turn===1;
+const showAI   = isSolo&&(phase===“ai-thinking”||phase===“feedback”&&fb?.pi===1);
+
+return(
+<div className=“game-bg” style={{height:“100vh”,display:“flex”,flexDirection:“column”,
+fontFamily:”‘Nunito’,sans-serif”,padding:6,gap:6,
+overflow:“hidden”,position:“relative”,userSelect:“none”}}>
+<style>{CSS}</style>
+<AnimatedBG/>
+
+```
+  {/* ── TOP BAR */}
+  <div style={{position:"relative",zIndex:10,display:"flex",alignItems:"center",
+    justifyContent:"space-between",padding:"5px 10px",
+    background:"rgba(255,255,255,0.88)",borderRadius:12,
+    border:"2px solid rgba(255,255,255,0.8)",
+    boxShadow:"0 2px 12px rgba(0,0,0,0.12)",flexWrap:"wrap",gap:4,flexShrink:0}}>
+    <span style={{fontFamily:"'Fredoka One',cursive",
+      fontSize:"clamp(16px,3vw,26px)",color:"#166534",letterSpacing:1}}>🎓 MATHOPOLY</span>
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+      <span style={{background:"#f0fdf4",border:"1.5px solid #22c55e",color:"#166534",
+        borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:800}}>
+        {diff==="easy"?"😊":diff==="medium"?"😤":"😈"} {diff}
+      </span>
+      <span style={{background:"#f0f9ff",border:"1.5px solid #38bdf8",color:"#0369a1",
+        borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:800}}>
+        Round {round}/{MAX_ROUNDS}
+      </span>
+      {!isMulti&&<span style={{background:`${colors[turn]}15`,border:`1.5px solid ${colors[turn]}`,
+        color:colors[turn],borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:800}}>
+        {syms[turn]} {names[turn]}'s turn
+      </span>}
+    </div>
+    <Btn ch="🏠 Quit" onClick={()=>setScreen("menu")} color="#94a3b8" sz="sm"/>
+  </div>
+
+  {/* ── MAIN 3-COL LAYOUT */}
+  <div style={{position:"relative",zIndex:10,display:"flex",gap:6,flex:1,minHeight:0}}>
+
+    {/* ─── LEFT: PLAYER 0 ─── */}
+    <div style={{flex:1,display:"flex",flexDirection:"column",gap:6,minWidth:0,
+      opacity:isMulti&&turn===1?.5:1,transition:"opacity .3s",overflow:"auto"}}>
+
+      {/* P0 stats card */}
+      <Card bg="rgba(255,255,255,0.88)" border={P1C} st={{flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <span style={{fontSize:26}}>{syms[0]}</span>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:800,color:P1C,fontSize:13,
+              fontFamily:"'Fredoka One',cursive",letterSpacing:.5}}>{names[0]}</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+              <MoneyBadge amount={money[0]} color="#166534"/>
+              <span style={{fontSize:11,fontWeight:800}}>{"❤️".repeat(lives[0])}{"🖤".repeat(3-lives[0])}</span>
+              <span style={{fontSize:11,color:"#f59e0b",fontWeight:700}}>⭐{scores[0]}pts</span>
+              {p0props>0&&<span style={{fontSize:11,color:P1C,fontWeight:700}}>🏠×{p0props}</span>}
+            </div>
+          </div>
+          {isMulti&&turn===0&&<span style={{background:`${P1C}20`,border:`1.5px solid ${P1C}`,
+            color:P1C,borderRadius:8,padding:"2px 7px",fontSize:10,fontWeight:800}}>YOUR TURN</span>}
+        </div>
+      </Card>
+
+      {/* P0 roll button */}
+      {(isMulti?turn===0:true)&&phase==="roll"&&(
+        <Card bg="rgba(255,255,255,0.88)" border={P1C} st={{flexShrink:0}}>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8}}>
+            <div style={{fontSize:"clamp(36px,6vw,56px)",lineHeight:1,
+              animation:rolling?"spinZ .1s linear infinite":"floatY 2s ease-in-out infinite",
+              filter:`drop-shadow(0 0 6px ${P1C})`}}>
+              {dice?diceFaces[dice]:"🎲"}
+            </div>
+            {dice&&!rolling&&<div style={{color:"#166534",fontWeight:800,fontSize:12}}>Rolled: {dice}</div>}
+            <Btn ch={rolling?"ROLLING...":moving?"MOVING...":"🎲 ROLL DICE"}
+              onClick={rollDice} color={P1C} sz="lg" dis={rolling||moving} full/>
+          </div>
+        </Card>
+      )}
+
+      {/* P0 question */}
+      {showQ0&&question&&(
+        <QPanel q={question} ans={ans[0]}
+          setAns={v=>setAns(a=>{const n=[...a];n[0]=v;return n;})}
+          onSubmit={()=>submitAns(0)}
+          onHint={()=>setHints(h=>{const n=[...h];n[0]=!n[0];return n;})}
+          showHint={hints[0]} color={P1C} iref={iref0} dis={false}/>
+      )}
+
+      {/* Buy prompt for P0 */}
+      {showBuy&&pendingBuy.pi===0&&(
+        <BuyPrompt tile={TILE_DATA[pendingBuy.tileIdx]} idx={pendingBuy.tileIdx}
+          playerMoney={money[0]} playerColor={P1C} playerName={names[0]}
+          onBuy={doBuy} onSkip={skipBuy}/>
+      )}
+
+      {/* Card reveal */}
+      {showCard&&cardData.pi===0&&(
+        <Card bg="rgba(255,255,255,0.95)" border="#a78bfa" st={{animation:"popIn .3s ease",textAlign:"center",flexShrink:0}}>
+          <div style={{fontSize:32,marginBottom:6}}>{cardData.type==="chance"?"🎲":"❓"}</div>
+          <div style={{fontFamily:"'Fredoka One',cursive",fontSize:14,color:"#7c3aed",marginBottom:4}}>
+            {cardData.type==="chance"?"CHANCE CARD":"QUESTION MARK CARD"}
+          </div>
+          <div style={{fontSize:13,fontWeight:700,color:"#1e293b",fontFamily:"'Nunito',sans-serif"}}>
+            {cardData.text}
+          </div>
+        </Card>
+      )}
+
+      {/* P0 feedback */}
+      {phase==="feedback"&&fb?.pi===0&&(
+        <div className={fb.ok?"pop":"shake"} style={{
+          background:fb.ok?"rgba(240,253,244,0.95)":"rgba(254,242,242,0.95)",
+          border:`2px solid ${fb.ok?"#22c55e":"#ef4444"}`,
+          borderRadius:14,padding:12,textAlign:"center",
+          fontSize:"clamp(12px,2vw,18px)",fontWeight:800,
+          color:fb.ok?"#166534":"#dc2626",flexShrink:0,
+          boxShadow:"0 4px 12px rgba(0,0,0,0.1)"}}>
+          {fb.msg}
+        </div>
+      )}
+
+      {isMulti&&turn===1&&(
+        <Card bg="rgba(255,255,255,0.7)" border="#e2e8f0" st={{textAlign:"center",flexShrink:0}}>
+          <span style={{color:"#94a3b8",fontSize:12}}>⏳ {names[1]}'s turn…</span>
+        </Card>
+      )}
+    </div>
+
+    {/* ─── CENTER: BOARD + LOG ─── */}
+    <div style={{flex:"0 0 auto",width:"min(36vw,270px)",display:"flex",
+      flexDirection:"column",gap:6}}>
+      <Board apos={apos} symbols={syms} owned={owned} isMulti={isMulti}/>
+      <Card bg="rgba(255,255,255,0.82)" border="rgba(255,255,255,0.8)"
+        st={{flex:1,overflow:"hidden",padding:"8px 10px"}}>
+        <div style={{color:"#94a3b8",fontSize:9,fontWeight:800,textTransform:"uppercase",
+          letterSpacing:1,marginBottom:4,fontFamily:"'Fredoka One',cursive"}}>Activity Log</div>
+        {log.map(e=>(
+          <div key={e.id} style={{fontSize:10,fontWeight:700,
+            padding:"2px 0",borderBottom:"1px solid #f1f5f9",
+            color:e.type==="good"?"#166534":e.type==="bad"?"#dc2626":
+              e.type==="bonus"?"#b45309":e.type==="warn"?"#d97706":"#64748b",
+            fontFamily:"'Nunito',sans-serif"}}>
+            {e.msg}
+          </div>
+        ))}
+      </Card>
+    </div>
+
+    {/* ─── RIGHT: PLAYER 1 / AI ─── */}
+    <div style={{flex:1,display:"flex",flexDirection:"column",gap:6,minWidth:0,
+      opacity:isMulti&&turn===0?.5:1,transition:"opacity .3s",overflow:"auto"}}>
+
+      {/* P1 stats */}
+      <Card bg="rgba(255,255,255,0.88)" border={P2C} st={{flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <span style={{fontSize:26}}>{syms[1]}</span>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:800,color:P2C,fontSize:13,
+              fontFamily:"'Fredoka One',cursive",letterSpacing:.5}}>{names[1]}</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+              <MoneyBadge amount={money[1]} color="#166534"/>
+              <span style={{fontSize:11,fontWeight:800}}>{"❤️".repeat(lives[1])}{"🖤".repeat(3-lives[1])}</span>
+              <span style={{fontSize:11,color:"#f59e0b",fontWeight:700}}>⭐{scores[1]}pts</span>
+              {p1props>0&&<span style={{fontSize:11,color:P2C,fontWeight:700}}>🏠×{p1props}</span>}
+            </div>
+          </div>
+          {isSolo&&<span style={{background:`${P2C}15`,border:`1.5px solid ${P2C}`,
+            color:P2C,borderRadius:8,padding:"2px 7px",fontSize:10,fontWeight:800}}>CPU</span>}
+          {isMulti&&turn===1&&<span style={{background:`${P2C}20`,border:`1.5px solid ${P2C}`,
+            color:P2C,borderRadius:8,padding:"2px 7px",fontSize:10,fontWeight:800}}>YOUR TURN</span>}
+        </div>
+      </Card>
+
+      {/* Multi P1 roll */}
+      {isMulti&&turn===1&&phase==="roll"&&(
+        <Card bg="rgba(255,255,255,0.88)" border={P2C} st={{flexShrink:0}}>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8}}>
+            <div style={{fontSize:"clamp(36px,6vw,56px)",lineHeight:1,
+              animation:rolling?"spinZ .1s linear infinite":"floatY 2s ease-in-out infinite",
+              filter:`drop-shadow(0 0 6px ${P2C})`}}>
+              {dice?diceFaces[dice]:"🎲"}
+            </div>
+            {dice&&!rolling&&<div style={{color:"#991b1b",fontWeight:800,fontSize:12}}>Rolled: {dice}</div>}
+            <Btn ch={rolling?"ROLLING...":moving?"MOVING...":"🎲 ROLL DICE"}
+              onClick={rollDice} color={P2C} sz="lg" dis={rolling||moving} full/>
+          </div>
+        </Card>
+      )}
+
+      {/* Multi P1 question */}
+      {showQ1&&question&&(
+        <QPanel q={question} ans={ans[1]}
+          setAns={v=>setAns(a=>{const n=[...a];n[1]=v;return n;})}
+          onSubmit={()=>submitAns(1)}
+          onHint={()=>setHints(h=>{const n=[...h];n[1]=!n[1];return n;})}
+          showHint={hints[1]} color={P2C} iref={iref1} dis={false}/>
+      )}
+
+      {/* Buy prompt for P1 */}
+      {showBuy&&pendingBuy.pi===1&&(
+        <BuyPrompt tile={TILE_DATA[pendingBuy.tileIdx]} idx={pendingBuy.tileIdx}
+          playerMoney={money[1]} playerColor={P2C} playerName={names[1]}
+          onBuy={doBuy} onSkip={skipBuy}/>
+      )}
+
+      {/* Card for P1 */}
+      {showCard&&cardData.pi===1&&(
+        <Card bg="rgba(255,255,255,0.95)" border="#a78bfa" st={{animation:"popIn .3s ease",textAlign:"center",flexShrink:0}}>
+          <div style={{fontSize:32,marginBottom:6}}>{cardData.type==="chance"?"🎲":"❓"}</div>
+          <div style={{fontFamily:"'Fredoka One',cursive",fontSize:14,color:"#7c3aed",marginBottom:4}}>
+            {cardData.type==="chance"?"CHANCE CARD":"QUESTION MARK CARD"}
+          </div>
+          <div style={{fontSize:13,fontWeight:700,color:"#1e293b",fontFamily:"'Nunito',sans-serif"}}>
+            {cardData.text}
+          </div>
+        </Card>
+      )}
+
+      {/* Solo AI panel */}
+      {isSolo&&(
+        <Card bg="rgba(255,255,255,0.82)" border={`${P2C}55`} st={{flexShrink:0}}>
+          {phase==="roll"&&(
+            <div style={{textAlign:"center",color:"#94a3b8",fontSize:12,fontFamily:"'Nunito',sans-serif"}}>
+              🤖 AI is watching you play…
+            </div>
+          )}
+          {phase==="ai-thinking"&&(
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:32,animation:"spinZ 1s linear infinite",marginBottom:4}}>🤖</div>
+              <div style={{color:P2C,fontWeight:800,fontSize:13,
+                fontFamily:"'Fredoka One',cursive"}}>AI calculating…</div>
+              {question&&<div style={{background:`${P2C}12`,border:`1.5px solid ${P2C}44`,
+                borderRadius:10,padding:"8px 10px",marginTop:8,
+                color:"#1e293b",fontWeight:700,fontSize:14,
+                fontFamily:"'Nunito',sans-serif"}}>{question.q} = ?</div>}
+            </div>
+          )}
+          {phase==="feedback"&&fb?.pi===1&&(
+            <div className={fb.ok?"pop":"shake"} style={{
+              textAlign:"center",fontSize:13,fontWeight:800,
+              color:fb.ok?"#166534":"#dc2626",fontFamily:"'Nunito',sans-serif"}}>
+              {fb.msg}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Multi P1 feedback */}
+      {isMulti&&phase==="feedback"&&fb?.pi===1&&(
+        <div className={fb.ok?"pop":"shake"} style={{
+          background:fb.ok?"rgba(240,253,244,0.95)":"rgba(254,242,242,0.95)",
+          border:`2px solid ${fb.ok?"#22c55e":"#ef4444"}`,
+          borderRadius:14,padding:12,textAlign:"center",
+          fontSize:"clamp(12px,2vw,18px)",fontWeight:800,
+          color:fb.ok?"#166534":"#dc2626",flexShrink:0,
+          boxShadow:"0 4px 12px rgba(0,0,0,0.1)"}}>
+          {fb.msg}
+        </div>
+      )}
+
+      {isMulti&&turn===0&&(
+        <Card bg="rgba(255,255,255,0.7)" border="#e2e8f0" st={{textAlign:"center",flexShrink:0}}>
+          <span style={{color:"#94a3b8",fontSize:12}}>⏳ {names[0]}'s turn…</span>
+        </Card>
+      )}
+    </div>
+  </div>
+</div>
+```
+
+);
+}
